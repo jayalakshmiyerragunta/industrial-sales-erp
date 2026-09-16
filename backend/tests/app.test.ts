@@ -1,0 +1,244 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import { app } from '../src/app';
+
+const api = request(app);
+
+async function login(email: string, password: string) {
+  const res = await api.post('/api/v1/auth/login').send({ email, password });
+  expect(res.status).toBe(200);
+  return res.body.data.token as string;
+}
+
+async function firstCustomer(admin: string) {
+  const res = await api.get('/api/v1/customers').set('Authorization', `Bearer ${admin}`);
+  return res.body.data[0].id as string;
+}
+
+async function productByCode(admin: string, code: string) {
+  const res = await api.get(`/api/v1/products?search=${code}`).set('Authorization', `Bearer ${admin}`);
+  const product = res.body.data.find((p: { code: string }) => p.code === code);
+  expect(product).toBeTruthy();
+  return product;
+}
+
+async function stockRow(admin: string, productId: string) {
+  const res = await api.get('/api/v1/inventory').set('Authorization', `Bearer ${admin}`);
+  return res.body.data.find((r: { productId: string }) => r.productId === productId);
+}
+
+async function createEnquiry(admin: string, customerId: string, items: { productId: string; quantity: number }[]) {
+  const res = await api
+    .post('/api/v1/enquiries')
+    .set('Authorization', `Bearer ${admin}`)
+    .send({ customerId, notes: 'automated test', items });
+  expect(res.body.success).toBe(true);
+  return res.body.data as { id: string; enquiryNo: string };
+}
+
+async function createQuotation(
+  admin: string,
+  enquiryId: string,
+  items: { productId: string; quantity: number; unitPrice: number; discountPct?: number; gstPct?: number }[]
+) {
+  const res = await api
+    .post('/api/v1/quotations')
+    .set('Authorization', `Bearer ${admin}`)
+    .send({ enquiryId, items });
+  expect(res.body.success).toBe(true);
+  return res.body.data as { id: string; quotationNo: string; totalAmount: string };
+}
+
+// Build enquiry -> quotation -> accept -> convert -> sales order, returning the order id.
+async function makePendingOrder(admin: string, customerId: string, productId: string, quantity: number) {
+  const enquiry = await createEnquiry(admin, customerId, [{ productId, quantity }]);
+  const quotation = await createQuotation(admin, enquiry.id, [
+    { productId, quantity, unitPrice: 1000, gstPct: 18 },
+  ]);
+  await api
+    .patch(`/api/v1/quotations/${quotation.id}/status`)
+    .set('Authorization', `Bearer ${admin}`)
+    .send({ status: 'SENT' })
+    .expect(200);
+  await api
+    .patch(`/api/v1/quotations/${quotation.id}/status`)
+    .set('Authorization', `Bearer ${admin}`)
+    .send({ status: 'ACCEPTED' })
+    .expect(200);
+  const res = await api
+    .post(`/api/v1/quotations/${quotation.id}/convert`)
+    .set('Authorization', `Bearer ${admin}`)
+    .expect(201);
+  return res.body.data as { id: string; orderNo: string };
+}
+
+describe('Industrial Sales Workflow ERP', () => {
+  let admin: string;
+  let sales: string;
+  let customerId: string;
+  let pump: { id: string };
+
+  beforeAll(async () => {
+    admin = await login('admin@erp.com', 'Admin@123');
+    sales = await login('sales@erp.com', 'Sales@123');
+    customerId = await firstCustomer(admin);
+    pump = await productByCode(admin, 'IND-PA-001');
+  });
+
+  it('rejects a login with a wrong password', async () => {
+    const res = await api.post('/api/v1/auth/login').send({ email: 'admin@erp.com', password: 'wrong' });
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('enforces backend RBAC: sales users cannot confirm orders', async () => {
+    const res = await api.post('/api/v1/sales-orders/whatever/confirm').set('Authorization', `Bearer ${sales}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('computes quotation totals on the backend (discount + GST) and rejects client totals', async () => {
+    // 2 x 10000 @ 10% disc + 18% GST  =>  20000 * 0.90 * 1.18 = 21240
+    const enquiry = await createEnquiry(admin, customerId, [{ productId: pump.id, quantity: 2 }]);
+    const res = await api
+      .post('/api/v1/quotations')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({
+        enquiryId: enquiry.id,
+        items: [{ productId: pump.id, quantity: 2, unitPrice: 10000, discountPct: 10, gstPct: 18 }],
+      })
+      .expect(201);
+    expect(res.body.data.totalAmount).toBe('21240');
+    expect(res.body.data.items[0].lineAmount).toBe('21240');
+
+    // A client trying to dictate the total is rejected by the strict schema.
+    const cheated = await api
+      .post('/api/v1/quotations')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({
+        enquiryId: enquiry.id,
+        totalAmount: 1,
+        items: [{ productId: pump.id, quantity: 2, unitPrice: 10000, gstPct: 18 }],
+      });
+    expect(cheated.status).toBe(400);
+  });
+
+  it('converts only ACCEPTED quotations, once', async () => {
+    const enquiry = await createEnquiry(admin, customerId, [{ productId: pump.id, quantity: 1 }]);
+    const quotation = await createQuotation(admin, enquiry.id, [
+      { productId: pump.id, quantity: 1, unitPrice: 1000, gstPct: 18 },
+    ]);
+
+    const notAccepted = await api
+      .post(`/api/v1/quotations/${quotation.id}/convert`)
+      .set('Authorization', `Bearer ${admin}`);
+    expect(notAccepted.status).toBe(409);
+
+    await api
+      .patch(`/api/v1/quotations/${quotation.id}/status`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ status: 'SENT' })
+      .expect(200);
+    await api
+      .patch(`/api/v1/quotations/${quotation.id}/status`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ status: 'ACCEPTED' })
+      .expect(200);
+
+    const conversion = await api
+      .post(`/api/v1/quotations/${quotation.id}/convert`)
+      .set('Authorization', `Bearer ${admin}`)
+      .expect(201);
+    expect(conversion.body.data.status).toBe('PENDING');
+
+    const duplicate = await api
+      .post(`/api/v1/quotations/${quotation.id}/convert`)
+      .set('Authorization', `Bearer ${admin}`);
+    expect(duplicate.status).toBe(409);
+  });
+
+  it('reserves inventory when an admin confirms a sales order', async () => {
+    const before = await stockRow(admin, pump.id);
+
+    const { id: orderId } = await makePendingOrder(admin, customerId, pump.id, 3);
+    const confirmRes = await api
+      .post(`/api/v1/sales-orders/${orderId}/confirm`)
+      .set('Authorization', `Bearer ${admin}`)
+      .expect(200);
+    expect(confirmRes.body.data.status).toBe('CONFIRMED');
+
+    const after = await stockRow(admin, pump.id);
+    expect(Number(after.reservedQty)).toBe(Number(before.reservedQty) + 3);
+    expect(Number(after.availableQty)).toBe(Number(before.availableQty) - 3);
+    expect(Number(after.physicalQty)).toBe(Number(before.physicalQty));
+
+    // A PENDING order cannot reserve twice.
+    const again = await api
+      .post(`/api/v1/sales-orders/${orderId}/confirm`)
+      .set('Authorization', `Bearer ${admin}`);
+    expect(again.status).toBe(409);
+  });
+
+  it('decrements physical + reserved stock on dispatch (one-time per order)', async () => {
+    const before = await stockRow(admin, pump.id);
+
+    const { id: orderId } = await makePendingOrder(admin, customerId, pump.id, 2);
+    await api.post(`/api/v1/sales-orders/${orderId}/confirm`).set('Authorization', `Bearer ${admin}`).expect(200);
+    const afterConfirm = await stockRow(admin, pump.id);
+
+    const res = await api
+      .post(`/api/v1/dispatches/${orderId}`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ vehicleNumber: 'TN01AB1234', driverName: 'Test Driver' })
+      .expect(201);
+    expect(res.body.data.salesOrder.id).toBe(orderId);
+
+    const after = await stockRow(admin, pump.id);
+    expect(Number(after.physicalQty)).toBe(Number(before.physicalQty) - 2);
+    expect(Number(after.reservedQty)).toBe(Number(afterConfirm.reservedQty) - 2);
+    // available drops at confirm (reserved up), and is unchanged at dispatch.
+    expect(Number(after.availableQty)).toBe(Number(afterConfirm.availableQty));
+
+    const twice = await api
+      .post(`/api/v1/dispatches/${orderId}`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ vehicleNumber: 'X', driverName: 'Z' });
+    expect(twice.status).toBe(409);
+  });
+
+  it('handles concurrent confirmations with row-level locking (only one can reserve)', async () => {
+    const created = await api
+      .post('/api/v1/products')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({
+        code: 'IND-RACE-001',
+        name: 'Race Stock Item',
+        category: 'Test',
+        unit: 'pcs',
+        basePrice: 500,
+        physicalQty: 10,
+      })
+      .expect(201);
+    const productId = created.body.data.id;
+
+    const orderA = await makePendingOrder(admin, customerId, productId, 6);
+    const orderB = await makePendingOrder(admin, customerId, productId, 8);
+
+    const [resA, resB] = await Promise.all([
+      api.post(`/api/v1/sales-orders/${orderA.id}/confirm`).set('Authorization', `Bearer ${admin}`),
+      api.post(`/api/v1/sales-orders/${orderB.id}/confirm`).set('Authorization', `Bearer ${admin}`),
+    ]);
+
+    const successes = [resA, resB].filter((r) => r.status === 200).length;
+    const failures = [resA, resB].filter((r) => r.status === 409).length;
+    expect(successes).toBe(1);
+    expect(failures).toBe(1);
+
+    // Exactly the successful order's quantity is reserved; available stays >= 0.
+    const row = await stockRow(admin, productId);
+    expect(Number(row.reservedQty)).toBe(6);
+    expect(Number(row.availableQty)).toBeGreaterThanOrEqual(0);
+
+    const confirmed = [resA, resB].find((r) => r.status === 200)?.body.data.status;
+    expect(confirmed).toBe('CONFIRMED');
+  });
+});

@@ -1,0 +1,21 @@
+version: "3.9"
+
+# Local development PostgreSQL for both the dev server and automated tests.
+#   dev : sales_erp   (used by `npm run dev`)
+#   test: sales_erp_test (used by `npm test`)
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sales-erp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sales_erp
+    ports:
+      - "5432:5432"
+    volumes:
+      - sales_erp_pgdata:/var/lib/postgresql/data
+
+volumes:
+  sales_erp_pgdata:

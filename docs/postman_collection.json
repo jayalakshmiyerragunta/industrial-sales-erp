@@ -1,0 +1,273 @@
+{
+  "info": {
+    "name": "Industrial Sales ERP",
+    "description": "Complete workflow: Auth → Customers → Products → Enquiries → Quotations → Sales Orders → Dispatches\n\nEnvironment: Set `baseUrl` = `http://localhost:5001/api/v1` and `token` after running the Login request.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5001/api/v1" }
+  ],
+  "item": [
+    {
+      "name": "01 - Auth",
+      "item": [
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login succeeded', () => { pm.response.to.have.status(200); });",
+                  "pm.test('Token captured', () => { const t = pm.response.json().data.token; pm.environment.set('token', t); pm.expect(t).to.be.a('string'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"admin@erp.com\",\"password\":\"Admin@123\"}" }
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/auth/me" } }
+        }
+      ]
+    },
+    {
+      "name": "02 - Customers",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/customers" } }
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/customers" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"companyName\":\"Test Corp\",\"contactPerson\":\"John Doe\",\"mobile\":\"9876543210\",\"email\":\"test@test.com\",\"city\":\"Chennai\",\"country\":\"India\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Products",
+      "item": [
+        {
+          "name": "List Products",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/products" } }
+        },
+        {
+          "name": "Create Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.environment.set('productId', pm.response.json().data.id);"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/products" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\":\"TEST-001\",\"name\":\"Test Widget\",\"category\":\"General\",\"unit\":\"pcs\",\"basePrice\":500,\"physicalQty\":100}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Inventory",
+      "item": [
+        {
+          "name": "Availability Matrix",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/inventory" } }
+        }
+      ]
+    },
+    {
+      "name": "05 - Enquiries",
+      "item": [
+        {
+          "name": "Create Enquiry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.environment.set('enquiryId', pm.response.json().data.id);"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/enquiries" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"CUSTOMER_ID_HERE\",\"notes\":\"Urgent requirement\",\"items\":[{\"productId\":\"PRODUCT_ID_HERE\",\"quantity\":50}]}"
+            }
+          }
+        },
+        {
+          "name": "List Enquiries",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/enquiries" } }
+        },
+        {
+          "name": "Get Enquiry",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/enquiries/{{enquiryId}}" } }
+        }
+      ]
+    },
+    {
+      "name": "06 - Quotations",
+      "item": [
+        {
+          "name": "Create Quotation (backend computes totals)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.environment.set('quotationId', pm.response.json().data.id);",
+                  "pm.test('Total computed server-side', () => { pm.expect(pm.response.json().data.totalAmount).to.be.a('string'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/quotations" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"enquiryId\":\"ENQUIRY_ID_HERE\",\"items\":[{\"productId\":\"PRODUCT_ID_HERE\",\"quantity\":50,\"unitPrice\":600,\"discountPct\":5,\"gstPct\":18}]}"
+            }
+          }
+        },
+        {
+          "name": "List Quotations",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/quotations" } }
+        },
+        {
+          "name": "Send Quotation (DRAFT → SENT)",
+          "request": {
+            "method": "PATCH",
+            "url": { "raw": "{{baseUrl}}/quotations/{{quotationId}}/status" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"status\":\"SENT\"}" }
+          }
+        },
+        {
+          "name": "Accept Quotation (SENT → ACCEPTED)",
+          "request": {
+            "method": "PATCH",
+            "url": { "raw": "{{baseUrl}}/quotations/{{quotationId}}/status" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"status\":\"ACCEPTED\"}" }
+          }
+        },
+        {
+          "name": "Convert to Sales Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.environment.set('salesOrderId', pm.response.json().data.id);"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/quotations/{{quotationId}}/convert" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - Sales Orders",
+      "item": [
+        {
+          "name": "List Sales Orders",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/sales-orders" } }
+        },
+        {
+          "name": "Get Sales Order",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/sales-orders/{{salesOrderId}}" } }
+        },
+        {
+          "name": "Confirm Order (reserves inventory)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/sales-orders/{{salesOrderId}}/confirm" }
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/sales-orders/{{salesOrderId}}/cancel" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 - Dispatches",
+      "item": [
+        {
+          "name": "Dispatch Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.environment.set('dispatchId', pm.response.json().data.id);"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/dispatches/{{salesOrderId}}" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"vehicleNumber\":\"TN01AB1234\",\"driverName\":\"Ravi Kumar\"}"
+            }
+          }
+        },
+        {
+          "name": "List Dispatches",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/dispatches" } }
+        },
+        {
+          "name": "Get Dispatch",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/dispatches/{{dispatchId}}" } }
+        }
+      ]
+    },
+    {
+      "name": "09 - Users",
+      "item": [
+        {
+          "name": "List Users (admin only)",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/users" } }
+        }
+      ]
+    }
+  ]
+}
