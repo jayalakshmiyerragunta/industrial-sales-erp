@@ -58,7 +58,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\"companyName\":\"Test Corp\",\"contactPerson\":\"John Doe\",\"mobile\":\"9876543210\",\"email\":\"test@test.com\",\"city\":\"Chennai\",\"country\":\"India\"}"
+              "raw": "{\"companyName\":\"Test Corp\",\"contactPerson\":\"John Doe\",\"mobile\":\"9876543210\",\"email\":\"test@test.com\",\"city\":\"Chennai\"}"
             }
           }
         }
@@ -99,6 +99,15 @@
         {
           "name": "Availability Matrix",
           "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/inventory" } }
+        },
+        {
+          "name": "Adjust Physical Stock (admin only)",
+          "request": {
+            "method": "PATCH",
+            "url": { "raw": "{{baseUrl}}/inventory/{{productId}}" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"physicalQty\":150}" }
+          }
         }
       ]
     },

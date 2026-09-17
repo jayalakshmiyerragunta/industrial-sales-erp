@@ -49,11 +49,21 @@ export async function create(data: CreateProductInput) {
 }
 
 export async function update(id: string, data: UpdateProductInput) {
-  const existing = await prisma.product.findUnique({ where: { id } });
+  const existing = await prisma.product.findUnique({ where: { id }, include: productInclude });
   if (!existing) throw new AppError(404, 'Product not found');
 
   const { basePrice, ...rest } = data as UpdateProductInput & { physicalQty?: number };
   const { physicalQty, ...productData } = { ...rest, ...(basePrice !== undefined ? { basePrice } : {}) };
+
+  if (physicalQty !== undefined) {
+    const reserved = existing.inventory?.reservedQty ?? 0;
+    if (physicalQty < reserved) {
+      throw new AppError(
+        409,
+        `Physical stock cannot be set below the ${reserved} units already reserved`
+      );
+    }
+  }
 
   const product = await prisma.product.update({
     where: { id },

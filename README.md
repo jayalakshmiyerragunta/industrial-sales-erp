@@ -159,7 +159,7 @@ backend/src/
 │   ├── users/          # list users (admin)
 │   ├── customers/      # CRUD with search
 │   ├── products/       # CRUD + categories (admin)
-│   ├── inventory/      # availability view (physical/reserved/available)
+│   ├── inventory/      # availability view + admin stock adjustment
 │   ├── enquiries/      # create (multi-item), list, get, status transitions
 │   ├── quotations/     # create (backend-computed totals), status, convert
 │   ├── sales-orders/   # list, get, confirm (reserves stock), cancel (releases)
@@ -189,10 +189,16 @@ When an admin confirms a Sales Order, every inventory row is locked with `SELECT
 1. First transaction locks the rows, reads available stock, increments `reserved_qty`, commits.
 2. Second transaction wakes up, re-reads the now-reduced available stock, and fails with HTTP 409 if insufficient.
 
-This is tested end-to-end in the test suite (test 7).
+This is tested end-to-end in the test suite (test 12).
 
 ### Unique quotation → order mapping
 A quotation can be converted into a Sales Order **exactly once**, enforced both by application logic (409 on duplicate) and a unique constraint on `sales_orders.quotation_id`.
+
+### Manage inventory (admin stock adjustment)
+ADMINs can adjust physical stock via `PATCH /inventory/:productId`. The inventory row is locked
+`FOR UPDATE` and the new `physical_qty` is rejected with HTTP 409 if it is below the quantity
+currently reserved — so the invariant `reserved_qty <= physical_qty` (i.e. non-negative available
+stock) always holds. The same guard also protects the `PATCH /products/:id` path.
 
 ### Unique driver allocation on dispatch
 Dispatching an order requires picking one driver from the seeded fleet (`drivers` table). A driver once allocated to a dispatch can **never** serve another order:
@@ -211,7 +217,7 @@ npm test                     # runs once (test DB is reset + reseeded each run)
 npm run test:watch           # runs in watch mode
 ```
 
-**12 tests** covering:
+**14 tests** covering:
 
 | # | Test | What it proves |
 |---|------|----------------|
@@ -227,6 +233,8 @@ npm run test:watch           # runs in watch mode
 | 10 | Cancel releases reservations | CONFIRMED → CANCELLED frees stock |
 | 11 | Rejected enquiry is terminal | Marking LOST again → 409 |
 | 12 | Concurrent confirms (bonus) | Two parallel confirms on 10-unit stock → exactly one 409 |
+| 13 | Admin adjusts physical stock, blocked below reserved | `PATCH /inventory/:productId` RBAC + `reserved <= physical` invariant |
+| 14 | Sales creates a customer (blank email allowed) | SALES permission + optional email stored as NULL |
 
 ---
 
@@ -264,10 +272,15 @@ All endpoints are prefixed with `/api/v1`.
 | POST | `/auth/login` | — | Login → JWT token |
 | GET | `/auth/me` | JWT | Current user profile |
 | GET | `/customers` | JWT | List/search customers |
+| GET | `/customers/:id` | JWT | Customer detail |
 | POST | `/customers` | SALES/ADMIN | Create customer |
+| PATCH | `/customers/:id` | SALES/ADMIN | Update customer |
 | GET | `/products` | JWT | List products (search by name/code) |
+| GET | `/products/categories` | JWT | Distinct product categories |
 | POST | `/products` | ADMIN | Create product (with opening inventory) |
+| PATCH | `/products/:id` | ADMIN | Update product (physical qty guarded against reservations) |
 | GET | `/inventory` | JWT | Availability matrix (physical/reserved/available) |
+| PATCH | `/inventory/:productId` | ADMIN | Adjust physical stock (rejected if below reserved) |
 | POST | `/enquiries` | SALES/ADMIN | Create enquiry with product items |
 | GET | `/enquiries` | JWT | List all enquiries |
 | GET | `/enquiries/:id` | JWT | Enquiry detail (items, linked quotations) |

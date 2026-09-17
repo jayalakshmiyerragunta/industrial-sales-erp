@@ -25,6 +25,8 @@ Open `http://localhost:5173` in Chrome.
 - Click "+ New customer" → fill form → create → appears in table
 - **Products** → show 6 industrial products with Physical / Reserved / Available columns
 - **Inventory** → full availability matrix with utilisation percentages
+  - As **admin**, click **"Adjust"** on a row → set a new physical quantity → save
+  - **Narrate:** *"Only admins can manage stock. The backend locks the row and refuses to set physical quantity below what is already reserved, so available stock can never go negative."*
 
 ---
 
@@ -77,11 +79,12 @@ Open `http://localhost:5173` in Chrome.
 - Navigate to **Sales Orders** → "Confirm" and "Cancel" buttons are hidden (admin-only)
 - Show that sales users CAN create enquiries and quotations, but cannot confirm, cancel, or dispatch
 - **Narrate:** *"Backend RBAC enforced via the requireRole middleware — the frontend hides buttons, but even direct API calls are blocked server-side."*
+- Also point out: the sales user can view the **Inventory** matrix but has no **Adjust** action (admin-only).
 
 ---
 
 ### [4:45–5:00] Close
 
 - Briefly show the full navigation: Dashboard → Customers → Products → Inventory → Enquiries → Quotations → Sales Orders → Dispatches
-- **Closing line:** *"This is a full PERN-stack ERP covering the complete workflow from Customer Enquiry through Quotation, Sales Order with inventory reservation, to Dispatch with per-order driver allocation — verified by 11 passing tests including a concurrency bonus test."*
+- **Closing line:** *"This is a full PERN-stack ERP covering the complete workflow from Customer Enquiry through Quotation, Sales Order with inventory reservation, to Dispatch with per-order driver allocation — verified by 14 passing tests including a concurrency bonus test."*
 - Stop recording.

@@ -26,7 +26,7 @@ export default function Customers() {
     e.preventDefault();
     setError('');
     try {
-      await api.post('/customers', form);
+      await api.post('/customers', { ...form, email: form.email.trim() || undefined });
       setShowModal(false);
       setForm(emptyForm);
       await load();

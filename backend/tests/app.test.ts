@@ -374,4 +374,73 @@ describe('Industrial Sales Workflow ERP', () => {
     const confirmed = [resA, resB].find((r) => r.status === 200)?.body.data.status;
     expect(confirmed).toBe('CONFIRMED');
   });
+
+  it('lets an admin adjust physical stock, but never below reserved (manage inventory)', async () => {
+    const created = await api
+      .post('/api/v1/products')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({
+        code: 'IND-ADJ-001',
+        name: 'Adjustable Stock Item',
+        category: 'Test',
+        unit: 'pcs',
+        basePrice: 300,
+        physicalQty: 20,
+      })
+      .expect(201);
+    const productId = created.body.data.id;
+
+    // SALES users may view inventory but cannot adjust it (backend RBAC).
+    await api
+      .patch(`/api/v1/inventory/${productId}`)
+      .set('Authorization', `Bearer ${sales}`)
+      .send({ physicalQty: 30 })
+      .expect(403);
+
+    // Negative quantities are rejected by validation.
+    await api
+      .patch(`/api/v1/inventory/${productId}`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ physicalQty: -5 })
+      .expect(400);
+
+    // Admin can raise physical stock; available = physical - reserved.
+    const up = await api
+      .patch(`/api/v1/inventory/${productId}`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ physicalQty: 50 })
+      .expect(200);
+    expect(Number(up.body.data.physicalQty)).toBe(50);
+    expect(Number(up.body.data.reservedQty)).toBe(0);
+    expect(Number(up.body.data.availableQty)).toBe(50);
+
+    // Once 8 units are reserved, physical stock cannot drop below the reservation.
+    const { id: orderId } = await makePendingOrder(admin, customerId, productId, 8);
+    await api
+      .post(`/api/v1/sales-orders/${orderId}/confirm`)
+      .set('Authorization', `Bearer ${admin}`)
+      .expect(200);
+
+    const below = await api
+      .patch(`/api/v1/inventory/${productId}`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ physicalQty: 4 });
+    expect(below.status).toBe(409);
+    expect(below.body.message).toMatch(/reserved/i);
+  });
+
+  it('lets a sales user create a customer, including one with a blank email', async () => {
+    const res = await api
+      .post('/api/v1/customers')
+      .set('Authorization', `Bearer ${sales}`)
+      .send({
+        companyName: 'No Email Co',
+        contactPerson: 'Nemo Menon',
+        mobile: '9000000000',
+        email: '',
+        city: 'Kochi',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data.email).toBeNull();
+  });
 });
