@@ -9,11 +9,9 @@ export interface Customer {
   id: string;
   companyName: string;
   contactPerson: string;
-  email: string;
-  phone: string;
+  mobile: string;
+  email: string | null;
   city: string;
-  state: string;
-  country: string;
   createdAt: string;
 }
 

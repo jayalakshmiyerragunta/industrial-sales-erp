@@ -61,5 +61,13 @@ export async function create(data: CreateEnquiryInput, userId: string) {
 export async function setStatus(id: string, status: 'NEW' | 'QUOTED' | 'WON' | 'LOST') {
   const existing = await prisma.enquiry.findUnique({ where: { id } });
   if (!existing) throw new AppError(404, 'Enquiry not found');
+
+  if (status === 'LOST') {
+    if (existing.status === 'WON' || existing.status === 'LOST') {
+      throw new AppError(409, `This enquiry is already ${existing.status} and cannot be rejected`);
+    }
+    return prisma.enquiry.update({ where: { id }, data: { status } });
+  }
+
   return prisma.enquiry.update({ where: { id }, data: { status } });
 }

@@ -93,7 +93,10 @@ export async function convertFromQuotation(quotationId: string, userId: string) 
 export async function confirm(id: string) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM sales_orders WHERE id = ${id} FOR UPDATE`;
-    const order = await tx.salesOrder.findUnique({ where: { id }, include: { items: true } });
+    const order = await tx.salesOrder.findUnique({
+      where: { id },
+      include: { items: { include: { product: true } } },
+    });
     if (!order) throw new AppError(404, 'Sales order not found');
 
     if (order.status !== 'PENDING') {
@@ -101,10 +104,11 @@ export async function confirm(id: string) {
     }
 
     for (const item of order.items) {
+      const label = `${item.product.code} (${item.product.name})`;
       const [inv] = await tx.$queryRaw<InventoryRow[]>`
         SELECT id, physical_qty, reserved_qty FROM inventory WHERE product_id = ${item.productId} FOR UPDATE
       `;
-      if (!inv) throw new AppError(409, `No inventory record exists for product ${item.productId}`);
+      if (!inv) throw new AppError(409, `No inventory record exists for ${label}`);
 
       const physical = Number(inv.physical_qty);
       const reserved = Number(inv.reserved_qty);
@@ -113,7 +117,7 @@ export async function confirm(id: string) {
       if (available < item.quantity) {
         throw new AppError(
           409,
-          `Insufficient stock for ${item.productId}: required ${item.quantity}, available ${available}`
+          `Insufficient stock for ${label}: required ${item.quantity}, available ${available}`
         );
       }
 

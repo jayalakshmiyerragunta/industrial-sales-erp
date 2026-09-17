@@ -12,6 +12,7 @@ import enquiriesRouter from './modules/enquiries/enquiries.router';
 import quotationsRouter from './modules/quotations/quotations.router';
 import salesOrdersRouter from './modules/sales-orders/sales-orders.router';
 import dispatchesRouter from './modules/dispatches/dispatches.router';
+import driversRouter from './modules/drivers/drivers.router';
 
 export const app = express();
 
@@ -35,6 +36,7 @@ app.use(`${API}/enquiries`, enquiriesRouter);
 app.use(`${API}/quotations`, quotationsRouter);
 app.use(`${API}/sales-orders`, salesOrdersRouter);
 app.use(`${API}/dispatches`, dispatchesRouter);
+app.use(`${API}/drivers`, driversRouter);
 
 // 404
 app.use((_req, res) => {

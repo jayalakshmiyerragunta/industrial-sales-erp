@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { Dispatch } from '../api/types';
 import StatusBadge from '../components/StatusBadge';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
+import { DispatchesIcon } from '../components/icons';
 
 export default function Dispatches() {
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
@@ -17,12 +20,12 @@ export default function Dispatches() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>Dispatches</h1>
-          <div className="sub">Goods released against confirmed sales orders — one dispatch per order</div>
-        </div>
-      </div>
+      <PageHeader
+        icon={<DispatchesIcon />}
+        eyebrow="Logistics"
+        title="Dispatches"
+        description="Goods released against confirmed orders — one dispatch per order"
+      />
 
       <div className="table-wrap">
         <table>
@@ -40,25 +43,23 @@ export default function Dispatches() {
           <tbody>
             {dispatches.map((d) => (
               <tr key={d.id}>
-                <td className="money">{d.dispatchNo}</td>
+                <td className="doc-no">{d.dispatchNo}</td>
                 <td>
-                  {d.salesOrder?.orderNo}{' '}
+                  <span className="doc-no">{d.salesOrder?.orderNo}</span>{' '}
                   <StatusBadge status={d.salesOrder?.status ?? ''} />
                 </td>
-                <td>{d.salesOrder?.customer?.companyName}</td>
-                <td>{d.items?.map((i) => `${i.product?.code} ×${i.quantity}`).join(', ') || '—'}</td>
-                <td>{d.vehicleNumber}</td>
-                <td>{d.driverName}</td>
-                <td>{new Date(d.dispatchDate).toLocaleString('en-IN')}</td>
+                <td style={{ fontWeight: 600 }}>{d.salesOrder?.customer?.companyName}</td>
+                <td className="muted">{d.items?.map((i) => `${i.product?.code} ×${i.quantity}`).join(', ') || '—'}</td>
+                <td className="doc-no">{d.vehicleNumber}</td>
+                <td style={{ fontWeight: 600 }}>{d.driverName}</td>
+                <td className="muted">{new Date(d.dispatchDate).toLocaleString('en-IN')}</td>
               </tr>
             ))}
-            {dispatches.length === 0 && (
-              <tr>
-                <td colSpan={7} className="muted">Nothing dispatched yet.</td>
-              </tr>
-            )}
           </tbody>
         </table>
+        {dispatches.length === 0 && (
+          <EmptyState icon={<DispatchesIcon />} title="Nothing dispatched yet" hint="Confirmed orders appear here once dispatched." />
+        )}
       </div>
     </div>
   );

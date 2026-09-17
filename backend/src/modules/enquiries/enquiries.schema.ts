@@ -17,3 +17,13 @@ export const createEnquirySchema = z
   .strict();
 
 export type CreateEnquiryInput = z.infer<typeof createEnquirySchema>;
+
+export const setEnquiryStatusSchema = z
+  .object({
+    status: z.enum(['NEW', 'QUOTED', 'WON', 'LOST'], {
+      errorMap: () => ({ message: 'Status must be NEW, QUOTED, WON or LOST' }),
+    }),
+  })
+  .strict();
+
+export type SetEnquiryStatusInput = z.infer<typeof setEnquiryStatusSchema>;

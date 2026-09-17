@@ -62,8 +62,10 @@ Open `http://localhost:5173` in Chrome.
 ### [3:30–4:15] Dispatch
 
 - Back to **Sales Orders** → click **"Dispatch"** on the confirmed order
-- Enter vehicle number (e.g. TN01AB1234) + driver name (e.g. Ravi Kumar) → submit
+- Show the **driver dropdown** (8 drivers with vehicle numbers) → pick e.g. Ravi Kumar → submit
+  - **Narrate:** *"Each dispatch allocates a driver from the fleet. Once a driver is allocated to one order they can never be assigned to another — a UNIQUE constraint in the database is the backstop, so even simultaneous dispatches can't double-book a driver."*
 - Dispatch number appears on the order; status → **DISPATCHED**
+- Open a second confirmed order's dispatch modal → the used driver is greyed out as "allocated"
 - Navigate to **Inventory** → physicalQty AND reservedQty both decreased; availableQty unchanged
 - Navigate to **Dispatches** → dispatch record with vehicle, driver, items, timestamp
 
@@ -81,5 +83,5 @@ Open `http://localhost:5173` in Chrome.
 ### [4:45–5:00] Close
 
 - Briefly show the full navigation: Dashboard → Customers → Products → Inventory → Enquiries → Quotations → Sales Orders → Dispatches
-- **Closing line:** *"This is a full PERN-stack ERP covering the complete workflow from Customer Enquiry through Quotation, Sales Order with inventory reservation, to Dispatch — with 7 passing tests including a concurrency bonus test."*
+- **Closing line:** *"This is a full PERN-stack ERP covering the complete workflow from Customer Enquiry through Quotation, Sales Order with inventory reservation, to Dispatch with per-order driver allocation — verified by 11 passing tests including a concurrency bonus test."*
 - Stop recording.

@@ -58,7 +58,7 @@ npm install
 cp .env.example .env          # edit PORT if 5001 is occupied
 npx prisma generate            # generate Prisma client
 npx prisma db push             # create tables
-npx prisma db seed             # seed users + products
+npx prisma db seed             # seed users, products + drivers
 ```
 
 ### 3. Start the backend
@@ -163,7 +163,8 @@ backend/src/
 │   ├── enquiries/      # create (multi-item), list, get, status transitions
 │   ├── quotations/     # create (backend-computed totals), status, convert
 │   ├── sales-orders/   # list, get, confirm (reserves stock), cancel (releases)
-│   └── dispatches/     # create (decrements physical+reserved), list, get
+│   ├── dispatches/     # create (decrements physical+reserved), list, get
+│   └── drivers/        # fleet list with allocation status
 ├── utils/
 │   └── numbering.ts    # Atomic doc numbers (ENQ/QTN/SO/DSP-YYYYMMDD-XXXX)
 ├── app.ts              # Express app, mounts all routers
@@ -193,6 +194,13 @@ This is tested end-to-end in the test suite (test 7).
 ### Unique quotation → order mapping
 A quotation can be converted into a Sales Order **exactly once**, enforced both by application logic (409 on duplicate) and a unique constraint on `sales_orders.quotation_id`.
 
+### Unique driver allocation on dispatch
+Dispatching an order requires picking one driver from the seeded fleet (`drivers` table). A driver once allocated to a dispatch can **never** serve another order:
+
+- The DB-level `UNIQUE` constraint on `dispatches.driver_id` is the backstop — a second `INSERT` for the same driver throws `P2002` and is returned as HTTP 409, even under concurrency.
+- The API derives `driverName` / `vehicleNumber` from the `Driver` row by id, so the client cannot spoof them.
+- The frontend dispatch modal lists active drivers and greys out already-allocated ones (verified via `GET /drivers`, which returns an `allocated` flag).
+
 ---
 
 ## Testing
@@ -203,7 +211,7 @@ npm test                     # runs once (test DB is reset + reseeded each run)
 npm run test:watch           # runs in watch mode
 ```
 
-**7 tests** covering:
+**12 tests** covering:
 
 | # | Test | What it proves |
 |---|------|----------------|
@@ -211,9 +219,14 @@ npm run test:watch           # runs in watch mode
 | 2 | Sales user can't confirm → 403 | Backend RBAC enforced |
 | 3 | Quotation totals computed server-side | Discount+GST math; client totals rejected |
 | 4 | Convert only ACCEPTED, once | Conversion guards + unique constraint |
-| 5 | Confirm reserves stock | reservedQty up, availableQty down, physical unchanged |
-| 6 | Dispatch decrements physical+reserved | One-time per order; stock consumed correctly |
-| 7 | Concurrent confirms (bonus) | Two parallel confirms on 10-unit stock → exactly one 409 |
+| 5 | REJECTED quotation can't convert | Status-gated conversion |
+| 6 | Confirm reserves stock | reservedQty up, availableQty down, physical unchanged |
+| 7 | Dispatch decrements physical+reserved | One-time per order; driver snapshot stored |
+| 8 | Same driver can't serve two orders | Unique constraint + friendly 409 |
+| 9 | Insufficient stock rejected (brief Test 4) | Confirm can't reserve more than available |
+| 10 | Cancel releases reservations | CONFIRMED → CANCELLED frees stock |
+| 11 | Rejected enquiry is terminal | Marking LOST again → 409 |
+| 12 | Concurrent confirms (bonus) | Two parallel confirms on 10-unit stock → exactly one 409 |
 
 ---
 
@@ -258,7 +271,7 @@ All endpoints are prefixed with `/api/v1`.
 | POST | `/enquiries` | SALES/ADMIN | Create enquiry with product items |
 | GET | `/enquiries` | JWT | List all enquiries |
 | GET | `/enquiries/:id` | JWT | Enquiry detail (items, linked quotations) |
-| PATCH | `/enquiries/:id/status` | SALES/ADMIN | Transition enquiry status |
+| PATCH | `/enquiries/:id/status` | SALES/ADMIN | Mark enquiry LOST (reject); WON is set on quotation acceptance |
 | POST | `/quotations` | SALES/ADMIN | Create quotation (backend-computed totals) |
 | GET | `/quotations` | JWT | List all quotations |
 | GET | `/quotations/:id` | JWT | Quotation detail (items, totals) |
@@ -268,9 +281,10 @@ All endpoints are prefixed with `/api/v1`.
 | GET | `/sales-orders/:id` | JWT | Order detail (items, dispatches) |
 | POST | `/sales-orders/:id/confirm` | ADMIN | Reserve inventory (row locks) |
 | POST | `/sales-orders/:id/cancel` | ADMIN | Cancel + release reservations |
-| POST | `/dispatches/:id` | ADMIN | Dispatch order (consume stock) |
+| POST | `/dispatches/:id` | ADMIN | Dispatch order — body `{ driverId }` (consume stock, allocate driver) |
 | GET | `/dispatches` | JWT | List all dispatches |
 | GET | `/dispatches/:id` | JWT | Dispatch detail (items, vehicle) |
+| GET | `/drivers` | JWT | Fleet list (name, vehicle, `allocated` flag) |
 
 ---
 

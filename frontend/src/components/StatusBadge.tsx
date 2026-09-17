@@ -1,3 +1,9 @@
 export default function StatusBadge({ status }: { status: string }) {
-  return <span className={`badge ${status}`}>{status}</span>;
+  if (!status) return null;
+  return (
+    <span className={`badge ${status}`}>
+      <span className="badge-dot" />
+      {status}
+    </span>
+  );
 }

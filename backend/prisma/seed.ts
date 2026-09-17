@@ -59,6 +59,27 @@ async function main() {
     console.log(`  ✅ Product: ${p.name} (${p.physical} units in stock)`);
   }
 
+  // ── Drivers (delivery fleet) ───────────────────
+  const drivers = [
+    { name: 'Ravi Kumar', vehicleNumber: 'TN01AB1234' },
+    { name: 'Suresh Babu', vehicleNumber: 'KA51MP4321' },
+    { name: 'Mahesh Rao', vehicleNumber: 'AP16TX7788' },
+    { name: 'Arun Kumar', vehicleNumber: 'TN09KT9991' },
+    { name: 'Dinesh Yadav', vehicleNumber: 'DL1PC5555' },
+    { name: 'Irfan Sheikh', vehicleNumber: 'MH12AB8888' },
+    { name: 'Mohan Raj', vehicleNumber: 'KL07BN1212' },
+    { name: 'Satish Naik', vehicleNumber: 'GJ05TR3030' },
+  ];
+
+  for (const d of drivers) {
+    await prisma.driver.upsert({
+      where: { vehicleNumber: d.vehicleNumber },
+      update: {},
+      create: d,
+    });
+    console.log(`  ✅ Driver: ${d.name} (${d.vehicleNumber})`);
+  }
+
   // ── Sample enquiry ─────────────────────────────
   const allProducts = await prisma.product.findMany();
   const enquiry = await prisma.enquiry.create({

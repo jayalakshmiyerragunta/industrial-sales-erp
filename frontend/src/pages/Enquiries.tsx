@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { Customer, Enquiry, Product } from '../api/types';
 import StatusBadge from '../components/StatusBadge';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
+import { EnquiriesIcon, PlusIcon } from '../components/icons';
 
 export default function Enquiries() {
   const navigate = useNavigate();
@@ -34,6 +37,16 @@ export default function Enquiries() {
     navigate(`/quotations?enquiryId=${enquiry.id}`);
   }
 
+  async function reject(enquiry: Enquiry) {
+    if (!window.confirm(`Reject enquiry ${enquiry.enquiryNo}? This marks it as LOST and cannot be undone.`)) return;
+    try {
+      await api.patch(`/enquiries/${enquiry.id}/status`, { status: 'LOST' });
+      await load();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Failed to reject enquiry');
+    }
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError('');
@@ -62,13 +75,16 @@ export default function Enquiries() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>Enquiries</h1>
-          <div className="sub">Customer product requests {'->'} quote, win or lose them</div>
-        </div>
-        <button className="primary" onClick={() => setShowModal(true)}>+ New enquiry</button>
-      </div>
+      <PageHeader
+        icon={<EnquiriesIcon />}
+        eyebrow="Pipeline"
+        title="Enquiries"
+        description="Customer requests — quote them, win or lose them"
+      >
+        <button className="primary" onClick={() => setShowModal(true)}>
+          <PlusIcon size={15} /> New enquiry
+        </button>
+      </PageHeader>
 
       <div className="table-wrap">
         <table>
@@ -77,89 +93,100 @@ export default function Enquiries() {
               <th>Enquiry No</th>
               <th>Customer</th>
               <th>Items</th>
-              <th>Notes</th>
               <th>Status</th>
               <th>Created</th>
-              <th>Action</th>
+              <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {enquiries.map((enq) => (
               <tr key={enq.id}>
-                <td className="money">{enq.enquiryNo}</td>
-                <td>{enq.customer?.companyName}</td>
-                <td>{enq.items?.map((i) => `${i.product?.code} ×${i.quantity}`).join(', ') || '—'}</td>
-                <td>{enq.notes || '—'}</td>
+                <td className="doc-no">{enq.enquiryNo}</td>
+                <td style={{ fontWeight: 600 }}>{enq.customer?.companyName}</td>
+                <td className="muted">{enq.items?.map((i) => `${i.product?.code} ×${i.quantity}`).join(', ') || '—'}</td>
                 <td><StatusBadge status={enq.status} /></td>
-                <td>{new Date(enq.createdAt).toLocaleDateString('en-IN')}</td>
+                <td className="muted">{new Date(enq.createdAt).toLocaleDateString('en-IN')}</td>
                 <td>
-                  {(enq.status === 'NEW' || enq.status === 'QUOTED') && (
-                    <button className="primary" onClick={() => createQuotation(enq)}>Create quotation</button>
-                  )}
+                  <div className="btn-row">
+                    {(enq.status === 'NEW' || enq.status === 'QUOTED') && (
+                      <button className="primary" onClick={() => createQuotation(enq)}>Create quotation</button>
+                    )}
+                    {(enq.status === 'NEW' || enq.status === 'QUOTED') && (
+                      <button className="danger" onClick={() => reject(enq)}>Reject</button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
-            {enquiries.length === 0 && (
-              <tr>
-                <td colSpan={7} className="muted">No enquiries yet — create your first one.</td>
-              </tr>
-            )}
           </tbody>
         </table>
+        {enquiries.length === 0 && (
+          <EmptyState icon={<EnquiriesIcon />} title="No enquiries yet" hint="Capture the first customer request.">
+            <button className="primary" onClick={() => setShowModal(true)}><PlusIcon size={15} /> New enquiry</button>
+          </EmptyState>
+        )}
       </div>
 
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>New enquiry</h2>
+            <div className="modal-header">
+              <h2>New enquiry</h2>
+              <div className="sub">Products and quantities the customer is asking for.</div>
+            </div>
             <form className="form" onSubmit={submit}>
-              <label>
-                Customer
-                <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
-                  <option value="" disabled>Select customer…</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.companyName} — {c.city}</option>
+              <div className="modal-body">
+                <label>
+                  Customer
+                  <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+                    <option value="" disabled>Select customer…</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>{c.companyName} — {c.city}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Notes
+                  <span className="hint">Optional — delivery expectations, context for the quote.</span>
+                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+                </label>
+                <div>
+                  <div className="sub mb">Products required</div>
+                  {items.map((it, idx) => (
+                    <div className="flex mb" key={idx}>
+                      <select value={it.productId} onChange={(e) => setItem(idx, 'productId', e.target.value)} style={{ flex: 1 }}>
+                        <option value="" disabled>Select product…</option>
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min="1"
+                        value={it.quantity}
+                        onChange={(e) => setItem(idx, 'quantity', e.target.value)}
+                        style={{ width: 90 }}
+                        placeholder="Qty"
+                      />
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => setItems((a) => a.filter((_, i) => i !== idx))}
+                        disabled={items.length === 1}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   ))}
-                </select>
-              </label>
-              <label>
-                Notes <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-              </label>
-              <div>
-                <div className="sub mb">Products required</div>
-                {items.map((it, idx) => (
-                  <div className="flex mb" key={idx}>
-                    <select value={it.productId} onChange={(e) => setItem(idx, 'productId', e.target.value)}>
-                      <option value="" disabled>Select product…</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min="1"
-                      value={it.quantity}
-                      onChange={(e) => setItem(idx, 'quantity', e.target.value)}
-                      style={{ width: 90 }}
-                      placeholder="Qty"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setItems((a) => a.filter((_, i) => i !== idx))}
-                      disabled={items.length === 1}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                <button type="button" onClick={() => setItems((a) => [...a, { productId: '', quantity: '1' }])}>
-                  + Add product
-                </button>
+                  <button type="button" onClick={() => setItems((a) => [...a, { productId: '', quantity: '1' }])}>
+                    + Add product
+                  </button>
+                  {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
+                </div>
               </div>
-              {error && <div className="error">{error}</div>}
-              <div className="btn-row">
-                <button className="primary" type="submit">Create enquiry</button>
+              <div className="modal-foot">
                 <button type="button" onClick={() => setShowModal(false)}>Cancel</button>
+                <button className="primary" type="submit">Create enquiry</button>
               </div>
             </form>
           </div>

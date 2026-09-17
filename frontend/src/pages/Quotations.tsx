@@ -3,6 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { Enquiry, Quotation } from '../api/types';
 import StatusBadge from '../components/StatusBadge';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
+import { QuotationsIcon, PlusIcon } from '../components/icons';
 
 const money = (v: string | number) => Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
@@ -38,7 +41,6 @@ export default function Quotations() {
     void load();
   }, [load]);
 
-  // Auto-open creation modal when arriving with ?enquiryId= (once enquiries load)
   useEffect(() => {
     const id = searchParams.get('enquiryId');
     if (id) setPendingId(id);
@@ -133,8 +135,18 @@ export default function Quotations() {
   }
 
   async function updateStatus(q: Quotation, status: 'SENT' | 'ACCEPTED' | 'REJECTED') {
+    if (status === 'REJECTED' && q.status === 'SENT') {
+      if (!window.confirm(`Reject ${q.quotationNo}? This marks the enquiry as LOST and cannot be undone.`)) return;
+    }
     try {
       await api.patch(`/quotations/${q.id}/status`, { status });
+      setFlash(
+        status === 'REJECTED'
+          ? `${q.quotationNo} rejected — enquiry marked LOST.`
+          : status === 'ACCEPTED'
+            ? `${q.quotationNo} accepted — enquiry marked WON.`
+            : `${q.quotationNo} sent for customer review.`
+      );
       await load();
     } catch (err) {
       setFlash(err instanceof ApiError ? err.message : 'Update failed');
@@ -156,13 +168,16 @@ export default function Quotations() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>Quotations</h1>
-          <div className="sub">Totals (discount + GST) are always computed on the backend</div>
-        </div>
-        <button className="primary" onClick={openNew}>+ New quotation</button>
-      </div>
+      <PageHeader
+        icon={<QuotationsIcon />}
+        eyebrow="Pricing"
+        title="Quotations"
+        description="Discount + GST totals are always computed on the backend"
+      >
+        <button className="primary" onClick={openNew}>
+          <PlusIcon size={15} /> New quotation
+        </button>
+      </PageHeader>
 
       {flash && <div className="notice mb">{flash}</div>}
 
@@ -173,106 +188,110 @@ export default function Quotations() {
               <th>Quotation No</th>
               <th>Enquiry</th>
               <th>Customer</th>
-              <th>Total</th>
+              <th className="money">Total</th>
               <th>Status</th>
               <th>Valid Until</th>
-              <th>Actions</th>
+              <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {quotations.map((q) => (
               <tr key={q.id}>
-                <td className="money">{q.quotationNo}</td>
-                <td>{q.enquiry?.enquiryNo}</td>
-                <td>{q.customer?.companyName}</td>
+                <td className="doc-no">{q.quotationNo}</td>
+                <td className="doc-no">{q.enquiry?.enquiryNo}</td>
+                <td style={{ fontWeight: 600 }}>{q.customer?.companyName}</td>
                 <td className="money">₹{money(q.totalAmount)}</td>
                 <td><StatusBadge status={q.status} /></td>
-                <td>{q.validUntil ? new Date(q.validUntil).toLocaleDateString('en-IN') : '—'}</td>
+                <td className="muted">{q.validUntil ? new Date(q.validUntil).toLocaleDateString('en-IN') : '—'}</td>
                 <td>
-                  {q.status === 'DRAFT' && (
-                    <button onClick={() => updateStatus(q, 'SENT')}>Send</button>
-                  )}
-                  {q.status === 'SENT' && (
-                    <div className="btn-row">
-                      <button className="success" onClick={() => updateStatus(q, 'ACCEPTED')}>Accept</button>
-                      <button className="danger" onClick={() => updateStatus(q, 'REJECTED')}>Reject</button>
-                    </div>
-                  )}
-                  {q.status === 'ACCEPTED' && !q.salesOrder && (
-                    <button className="primary" onClick={() => convert(q)}>Convert to order</button>
-                  )}
-                  {q.status === 'ACCEPTED' && q.salesOrder && (
-                    <span className="muted">{q.salesOrder.orderNo}</span>
-                  )}
+                  <div className="btn-row">
+                    {q.status === 'DRAFT' && (
+                      <button onClick={() => updateStatus(q, 'SENT')}>Send</button>
+                    )}
+                    {q.status === 'SENT' && (
+                      <>
+                        <button className="success" onClick={() => updateStatus(q, 'ACCEPTED')}>Accept</button>
+                        <button className="danger" onClick={() => updateStatus(q, 'REJECTED')}>Reject</button>
+                      </>
+                    )}
+                    {q.status === 'ACCEPTED' && !q.salesOrder && (
+                      <button className="primary" onClick={() => convert(q)}>Convert to order</button>
+                    )}
+                    {q.status === 'ACCEPTED' && q.salesOrder && (
+                      <span className="doc-no muted">{q.salesOrder.orderNo}</span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
-            {quotations.length === 0 && (
-              <tr>
-                <td colSpan={7} className="muted">No quotations yet.</td>
-              </tr>
-            )}
           </tbody>
         </table>
+        {quotations.length === 0 && (
+          <EmptyState icon={<QuotationsIcon />} title="No quotations yet" hint="Quote an enquiry to start pricing." />
+        )}
       </div>
 
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>New quotation</h2>
+            <div className="modal-header">
+              <h2>New quotation</h2>
+              <div className="sub">Line amounts and the grand total are recalculated server-side.</div>
+            </div>
             <form className="form" onSubmit={submit}>
-              <label>
-                Enquiry
-                <select value={enquiryId} onChange={(e) => pickEnquiry(e.target.value)} required>
-                  <option value="" disabled>Select enquiry…</option>
-                  {enquiries
-                    .filter((enq) => enq.status === 'NEW' || enq.status === 'QUOTED')
-                    .map((enq) => (
-                      <option key={enq.id} value={enq.id}>
-                        {enq.enquiryNo} — {enq.customer?.companyName}
-                      </option>
-                    ))}
-                </select>
-              </label>
-
-              {lines.length > 0 && (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>Unit Price</th>
-                        <th>Disc %</th>
-                        <th>GST %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lines.map((l, idx) => (
-                        <tr key={idx}>
-                          <td>{l.productCode} — {l.productName}</td>
-                          <td><input type="number" min="1" value={l.quantity} onChange={(e) => setLine(idx, 'quantity', e.target.value)} style={{ width: 70 }} /></td>
-                          <td><input type="number" min="0" value={l.unitPrice} onChange={(e) => setLine(idx, 'unitPrice', e.target.value)} style={{ width: 100 }} /></td>
-                          <td><input type="number" min="0" max="100" value={l.discountPct} onChange={(e) => setLine(idx, 'discountPct', e.target.value)} style={{ width: 70 }} /></td>
-                          <td><input type="number" min="0" max="100" value={l.gstPct} onChange={(e) => setLine(idx, 'gstPct', e.target.value)} style={{ width: 70 }} /></td>
-                        </tr>
+              <div className="modal-body">
+                <label>
+                  Enquiry
+                  <select value={enquiryId} onChange={(e) => pickEnquiry(e.target.value)} required>
+                    <option value="" disabled>Select enquiry…</option>
+                    {enquiries
+                      .filter((enq) => enq.status === 'NEW' || enq.status === 'QUOTED')
+                      .map((enq) => (
+                        <option key={enq.id} value={enq.id}>
+                          {enq.enquiryNo} — {enq.customer?.companyName}
+                        </option>
                       ))}
-                      <tr>
-                        <td colSpan={4} className="text-right"><strong>Estimated total</strong></td>
-                        <td className="money"><strong>₹{money(total)}</strong></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <div className="sub" style={{ padding: '8px 12px' }}>
-                    Preview only — the server recalculates discount + GST when you save.
-                  </div>
-                </div>
-              )}
+                  </select>
+                </label>
 
-              {error && <div className="error">{error}</div>}
-              <div className="btn-row">
-                <button className="primary" type="submit" disabled={lines.length === 0}>Create quotation</button>
+                {lines.length > 0 && (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>Qty</th>
+                          <th>Unit Price</th>
+                          <th>Disc %</th>
+                          <th>GST %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lines.map((l, idx) => (
+                          <tr key={idx}>
+                            <td><span className="doc-no">{l.productCode}</span> — <span className="muted">{l.productName}</span></td>
+                            <td><input type="number" min="1" value={l.quantity} onChange={(e) => setLine(idx, 'quantity', e.target.value)} style={{ width: 70 }} /></td>
+                            <td><input type="number" min="0" value={l.unitPrice} onChange={(e) => setLine(idx, 'unitPrice', e.target.value)} style={{ width: 100 }} /></td>
+                            <td><input type="number" min="0" max="100" value={l.discountPct} onChange={(e) => setLine(idx, 'discountPct', e.target.value)} style={{ width: 70 }} /></td>
+                            <td><input type="number" min="0" max="100" value={l.gstPct} onChange={(e) => setLine(idx, 'gstPct', e.target.value)} style={{ width: 70 }} /></td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td colSpan={4} className="text-right" style={{ fontWeight: 700 }}>Estimated total</td>
+                          <td className="money text-right" style={{ fontWeight: 700 }}>₹{money(total)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="sub" style={{ padding: '8px 14px' }}>
+                      Preview only — the server recalculates discount + GST when you save.
+                    </div>
+                  </div>
+                )}
+                {error && <div className="error">{error}</div>}
+              </div>
+              <div className="modal-foot">
                 <button type="button" onClick={() => setShowModal(false)}>Cancel</button>
+                <button className="primary" type="submit" disabled={lines.length === 0}>Create quotation</button>
               </div>
             </form>
           </div>

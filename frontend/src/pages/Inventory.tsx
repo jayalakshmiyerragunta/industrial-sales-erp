@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { InventoryRow } from '../api/types';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
+import { InventoryIcon } from '../components/icons';
 
 export default function Inventory() {
   const [rows, setRows] = useState<InventoryRow[]>([]);
@@ -18,26 +21,18 @@ export default function Inventory() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>Inventory Availability</h1>
-          <div className="sub">
-            available = physical − reserved. Confirmations reserve stock; dispatches consume it.
-          </div>
+      <PageHeader
+        icon={<InventoryIcon />}
+        eyebrow="Stock"
+        title="Inventory Availability"
+        description="available = physical − reserved. Confirmations reserve stock; dispatches consume it."
+      >
+        <div className="card" style={{ padding: '9px 16px', display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+          <span><span className="label">Physical </span><strong className="money">{total.physical.toLocaleString()}</strong></span>
+          <span><span className="label">Reserved </span><strong className="money" style={{ color: 'var(--amber)' }}>{total.reserved.toLocaleString()}</strong></span>
+          <span><span className="label">Available </span><strong className="money" style={{ color: 'var(--green)' }}>{total.available.toLocaleString()}</strong></span>
         </div>
-        <div className="flex">
-          <div className="card" style={{ padding: '10px 16px' }}>
-            <span className="label">Physical </span>
-            <strong>{total.physical.toLocaleString()}</strong>
-            <span className="muted"> · </span>
-            <span className="label">Reserved </span>
-            <strong className="money" style={{ color: 'var(--amber)' }}>{total.reserved.toLocaleString()}</strong>
-            <span className="muted"> · </span>
-            <span className="label">Available </span>
-            <strong className="money" style={{ color: 'var(--green)' }}>{total.available.toLocaleString()}</strong>
-          </div>
-        </div>
-      </div>
+      </PageHeader>
 
       <div className="table-wrap">
         <table>
@@ -47,10 +42,10 @@ export default function Inventory() {
               <th>Product</th>
               <th>Category</th>
               <th>Unit</th>
-              <th>Physical</th>
-              <th>Reserved</th>
-              <th>Available</th>
-              <th>Utilisation</th>
+              <th className="money">Physical</th>
+              <th className="money">Reserved</th>
+              <th className="money">Available</th>
+              <th className="money">Utilisation</th>
             </tr>
           </thead>
           <tbody>
@@ -58,24 +53,20 @@ export default function Inventory() {
               const util = r.physicalQty > 0 ? Math.round((r.reservedQty / r.physicalQty) * 100) : 0;
               return (
                 <tr key={r.productId}>
-                  <td>{r.productCode}</td>
-                  <td>{r.productName}</td>
+                  <td className="doc-no">{r.productCode}</td>
+                  <td style={{ fontWeight: 600 }}>{r.productName}</td>
                   <td>{r.category}</td>
                   <td>{r.unit}</td>
-                  <td>{r.physicalQty}</td>
-                  <td>{r.reservedQty}</td>
-                  <td style={{ color: r.availableQty < 0 ? 'var(--red)' : 'var(--green)' }}>{r.availableQty}</td>
-                  <td>{util}%</td>
+                  <td className="money">{r.physicalQty}</td>
+                  <td className="money">{r.reservedQty}</td>
+                  <td className="money" style={{ color: r.availableQty < 0 ? 'var(--red)' : 'var(--ink-2)' }}>{r.availableQty}</td>
+                  <td className="money" style={{ color: util >= 90 ? 'var(--red)' : util >= 70 ? 'var(--amber)' : 'var(--ink-2)' }}>{util}%</td>
                 </tr>
               );
             })}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={8} className="muted">Loading…</td>
-              </tr>
-            )}
           </tbody>
         </table>
+        {rows.length === 0 && <EmptyState icon={<InventoryIcon />} title="Loading stock…" />}
       </div>
     </div>
   );

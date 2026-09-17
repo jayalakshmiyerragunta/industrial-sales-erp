@@ -218,10 +218,23 @@ model SalesOrderItem {
   @@map("sales_order_items")
 }
 
+model Driver {
+  id            String     @id @default(cuid())
+  name          String
+  vehicleNumber String     @unique @map("vehicle_number")
+  isActive      Boolean    @default(true) @map("is_active")
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  dispatches Dispatch[]
+
+  @@map("drivers")
+}
+
 model Dispatch {
   id            String       @id @default(cuid())
   dispatchNo    String       @unique @map("dispatch_no")
   salesOrderId  String       @map("sales_order_id")
+  driverId      String?      @unique @map("driver_id")
   dispatchDate  DateTime     @default(now()) @map("dispatch_date")
   vehicleNumber String       @map("vehicle_number")
   driverName    String       @map("driver_name")
@@ -229,6 +242,7 @@ model Dispatch {
   createdAt     DateTime     @default(now()) @map("created_at")
 
   salesOrder SalesOrder     @relation(fields: [salesOrderId], references: [id])
+  driver     Driver?        @relation(fields: [driverId], references: [id])
   creator    User           @relation(fields: [createdBy], references: [id])
   items      DispatchItem[]
 

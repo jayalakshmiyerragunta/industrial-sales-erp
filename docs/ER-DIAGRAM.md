@@ -104,10 +104,18 @@ erDiagram
         decimal line_amount
     }
 
+    DRIVER {
+        string id PK
+        string name
+        string vehicle_number UK
+        boolean is_active
+    }
+
     DISPATCH {
         string id PK
         string dispatch_no UK
         string sales_order_id FK
+        string driver_id FK UK
         datetime dispatch_date
         string vehicle_number
         string driver_name
@@ -126,6 +134,8 @@ erDiagram
     USER ||--o{ SALES_ORDER : "creates"
     USER ||--o{ DISPATCH : "creates"
     USER ||--o{ CUSTOMER : "manages"
+
+    DRIVER ||--o| DISPATCH : "assigned to"
 
     CUSTOMER ||--o{ ENQUIRY : "receives"
     CUSTOMER ||--o{ QUOTATION : "receives"
@@ -158,6 +168,7 @@ erDiagram
 | `enquiry` → `quotation` | 1 : N | An enquiry can have multiple quotations |
 | `quotation` → `sales_order` | 1 : 0..1 | A quotation converts to **at most one** order (`quotation_id` is UNIQUE on `sales_orders`) |
 | `sales_order` → `dispatch` | 1 : 0..1 | Enforced at application level (one dispatch per order) |
+| `driver` → `dispatch` | 1 : 0..1 | `driver_id` is UNIQUE on `dispatches` — a driver serves **at most one** order ever |
 | `product` → `inventory` | 1 : 0..1 | One inventory row per product (`product_id` is UNIQUE on `inventory`) |
 | `product` → `*_item` | 1 : N | Products appear in line items across enquiries, quotations, orders, dispatches |
 

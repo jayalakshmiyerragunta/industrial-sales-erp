@@ -246,9 +246,13 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\"vehicleNumber\":\"TN01AB1234\",\"driverName\":\"Ravi Kumar\"}"
+              "raw": "{\"driverId\":\"{{driverId}}\"}"
             }
           }
+        },
+        {
+          "name": "List Drivers",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/drivers" } }
         },
         {
           "name": "List Dispatches",

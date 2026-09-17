@@ -72,6 +72,16 @@ async function makePendingOrder(admin: string, customerId: string, productId: st
   return res.body.data as { id: string; orderNo: string };
 }
 
+// First driver not yet used by a dispatch (optionally excluding one id).
+async function freeDriver(admin: string, excludedId?: string) {
+  const res = await api.get('/api/v1/drivers').set('Authorization', `Bearer ${admin}`);
+  const driver = res.body.data.find(
+    (d: { allocated: boolean; id: string }) => !d.allocated && d.id !== excludedId
+  );
+  expect(driver).toBeTruthy();
+  return driver as { id: string; name: string; vehicleNumber: string };
+}
+
 describe('Industrial Sales Workflow ERP', () => {
   let admin: string;
   let sales: string;
@@ -156,6 +166,44 @@ describe('Industrial Sales Workflow ERP', () => {
     expect(duplicate.status).toBe(409);
   });
 
+  it('does not convert a REJECTED quotation into a sales order', async () => {
+    const enquiry = await createEnquiry(admin, customerId, [{ productId: pump.id, quantity: 1 }]);
+    const quotation = await createQuotation(admin, enquiry.id, [
+      { productId: pump.id, quantity: 1, unitPrice: 1000, gstPct: 18 },
+    ]);
+    await api
+      .patch(`/api/v1/quotations/${quotation.id}/status`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ status: 'SENT' })
+      .expect(200);
+    await api
+      .patch(`/api/v1/quotations/${quotation.id}/status`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ status: 'REJECTED' })
+      .expect(200);
+
+    const res = await api
+      .post(`/api/v1/quotations/${quotation.id}/convert`)
+      .set('Authorization', `Bearer ${admin}`);
+    expect(res.status).toBe(409);
+  });
+
+  it('rejects (marks LOST) an enquiry and prevents re-rejecting a terminal one', async () => {
+    const enquiry = await createEnquiry(admin, customerId, [{ productId: pump.id, quantity: 1 }]);
+    const res = await api
+      .patch(`/api/v1/enquiries/${enquiry.id}/status`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ status: 'LOST' })
+      .expect(200);
+    expect(res.body.data.status).toBe('LOST');
+
+    const again = await api
+      .patch(`/api/v1/enquiries/${enquiry.id}/status`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ status: 'LOST' });
+    expect(again.status).toBe(409);
+  });
+
   it('reserves inventory when an admin confirms a sales order', async () => {
     const before = await stockRow(admin, pump.id);
 
@@ -185,12 +233,15 @@ describe('Industrial Sales Workflow ERP', () => {
     await api.post(`/api/v1/sales-orders/${orderId}/confirm`).set('Authorization', `Bearer ${admin}`).expect(200);
     const afterConfirm = await stockRow(admin, pump.id);
 
+    const driver = await freeDriver(admin);
     const res = await api
       .post(`/api/v1/dispatches/${orderId}`)
       .set('Authorization', `Bearer ${admin}`)
-      .send({ vehicleNumber: 'TN01AB1234', driverName: 'Test Driver' })
+      .send({ driverId: driver.id })
       .expect(201);
     expect(res.body.data.salesOrder.id).toBe(orderId);
+    expect(res.body.data.driverName).toBe(driver.name);
+    expect(res.body.data.vehicleNumber).toBe(driver.vehicleNumber);
 
     const after = await stockRow(admin, pump.id);
     expect(Number(after.physicalQty)).toBe(Number(before.physicalQty) - 2);
@@ -198,11 +249,93 @@ describe('Industrial Sales Workflow ERP', () => {
     // available drops at confirm (reserved up), and is unchanged at dispatch.
     expect(Number(after.availableQty)).toBe(Number(afterConfirm.availableQty));
 
+    const secondDriver = await freeDriver(admin, driver.id);
     const twice = await api
       .post(`/api/v1/dispatches/${orderId}`)
       .set('Authorization', `Bearer ${admin}`)
-      .send({ vehicleNumber: 'X', driverName: 'Z' });
+      .send({ driverId: secondDriver.id });
     expect(twice.status).toBe(409);
+  });
+
+  it('cannot allocate the same driver to two different orders', async () => {
+    const driver = await freeDriver(admin);
+
+    const orderA = await makePendingOrder(admin, customerId, pump.id, 1);
+    await api.post(`/api/v1/sales-orders/${orderA.id}/confirm`).set('Authorization', `Bearer ${admin}`).expect(200);
+    await api
+      .post(`/api/v1/dispatches/${orderA.id}`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ driverId: driver.id })
+      .expect(201);
+
+    const orderB = await makePendingOrder(admin, customerId, pump.id, 1);
+    await api.post(`/api/v1/sales-orders/${orderB.id}/confirm`).set('Authorization', `Bearer ${admin}`).expect(200);
+    const reuse = await api
+      .post(`/api/v1/dispatches/${orderB.id}`)
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ driverId: driver.id });
+    expect(reuse.status).toBe(409);
+    expect(reuse.body.message).toMatch(/already allocated/i);
+
+    // The driver list now reflects the allocation.
+    const list = await api.get('/api/v1/drivers').set('Authorization', `Bearer ${admin}`);
+    expect(list.body.data.find((d: { id: string }) => d.id === driver.id).allocated).toBe(true);
+  });
+
+  it('cannot confirm an order that requires more inventory than is available (brief Test 4)', async () => {
+    const res = await api
+      .post('/api/v1/products')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({
+        code: 'IND-SHORT-001',
+        name: 'Short Stock Item',
+        category: 'Test',
+        unit: 'pcs',
+        basePrice: 100,
+        physicalQty: 5,
+      })
+      .expect(201);
+    const productId = res.body.data.id;
+
+    const { id: orderId } = await makePendingOrder(admin, customerId, productId, 10);
+    const confirm = await api
+      .post(`/api/v1/sales-orders/${orderId}/confirm`)
+      .set('Authorization', `Bearer ${admin}`);
+    expect(confirm.status).toBe(409);
+    expect(confirm.body.message).toMatch(/Insufficient stock/i);
+  });
+
+  it('releases reserved inventory when a confirmed order is cancelled', async () => {
+    const created = await api
+      .post('/api/v1/products')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({
+        code: 'IND-CANCEL-001',
+        name: 'Cancel Stock Item',
+        category: 'Test',
+        unit: 'pcs',
+        basePrice: 200,
+        physicalQty: 20,
+      })
+      .expect(201);
+    const productId = created.body.data.id;
+    const before = await stockRow(admin, productId);
+
+    const { id: orderId } = await makePendingOrder(admin, customerId, productId, 8);
+    await api
+      .post(`/api/v1/sales-orders/${orderId}/confirm`)
+      .set('Authorization', `Bearer ${admin}`)
+      .expect(200);
+    const during = await stockRow(admin, productId);
+    expect(Number(during.reservedQty)).toBe(Number(before.reservedQty) + 8);
+
+    await api
+      .post(`/api/v1/sales-orders/${orderId}/cancel`)
+      .set('Authorization', `Bearer ${admin}`)
+      .expect(200);
+    const after = await stockRow(admin, productId);
+    expect(Number(after.reservedQty)).toBe(Number(before.reservedQty));
+    expect(Number(after.physicalQty)).toBe(Number(before.physicalQty));
   });
 
   it('handles concurrent confirmations with row-level locking (only one can reserve)', async () => {

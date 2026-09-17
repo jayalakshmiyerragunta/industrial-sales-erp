@@ -59,3 +59,13 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
 };
+
+export const getDrivers = () => api.get<Driver[]>('/drivers');
+
+export interface Driver {
+  id: string;
+  name: string;
+  vehicleNumber: string;
+  allocated: boolean;
+  dispatchNo: string | null;
+}
